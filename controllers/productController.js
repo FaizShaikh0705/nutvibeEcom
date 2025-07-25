@@ -7,17 +7,29 @@ exports.createProduct = async (req, res) => {
 
         const product = await Product.create({ title, description, media, category });
 
-        const parsedVariants = JSON.parse(variants).map(v => ({ ...v, ProductId: product.id }));
+        const parsedVariants = variants.map(v => ({ ...v, ProductId: product.id }));
         await Variant.bulkCreate(parsedVariants);
 
-        const parsedCategoryInfo = JSON.parse(categoryInfo);
-        const categoryEntry = await Category.create({ ...parsedCategoryInfo, ProductId: product.id });
+        const parsedCategoryInfo = categoryInfo;
+        const categoryEntry = await Category.create({
+            ...parsedCategoryInfo,
+            compareAtPrice: parsedCategoryInfo.compareAtPrice || 0,
+            weight: parsedCategoryInfo.weight || 0,
+            ProductId: product.id
+        });
 
-        const metafields = Object.entries(parsedCategoryInfo.customMetafields).map(([key, value]) => ({
-            key,
-            value,
-            CategoryId: categoryEntry.id,
-        }));
+        let metafields = [];
+
+        if (categoryInfo?.customMetafields) {
+            metafields = Object.entries(categoryInfo.customMetafields).map(([key, value]) => ({
+                key,
+                value,
+                CategoryId: categoryEntry.id,
+            }));
+
+            await Metafield.bulkCreate(metafields);
+        }
+
 
         await Metafield.bulkCreate(metafields);
 
@@ -28,7 +40,7 @@ exports.createProduct = async (req, res) => {
     }
 };
 
-exports.getProducts = async (req, res) => {
+exports.getAllProducts = async (req, res) => {
     try {
         const products = await Product.findAll({
             include: [Variant, { model: Category, include: [Metafield] }],
@@ -38,6 +50,28 @@ exports.getProducts = async (req, res) => {
         res.status(500).json({ error: "Failed to fetch products" });
     }
 };
+
+exports.getProducts = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const product = await Product.findOne({
+            where: { id },
+            include: [
+                { model: Variant, as: 'variants' },
+                { model: Category, as: 'category' }
+            ]
+        });
+
+        if (!product) return res.status(404).json({ message: 'Product not found' });
+
+        res.status(200).json(product);
+    } catch (err) {
+        console.error('Error getting product:', err);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 
 
 exports.updateProduct = async (req, res) => {
