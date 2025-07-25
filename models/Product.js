@@ -1,8 +1,20 @@
 module.exports = (sequelize, DataTypes) => {
     return sequelize.define("Product", {
-        title: DataTypes.STRING,
-        description: DataTypes.TEXT,
-        media: DataTypes.STRING,
-        category: DataTypes.STRING,
+        title: {
+            type: DataTypes.STRING,
+            allowNull: false
+        },
+        description: {
+            type: DataTypes.TEXT,
+            allowNull: false
+        },
+        media: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        category: {
+            type: DataTypes.STRING,
+            allowNull: false
+        }
     });
-}; 
+};

@@ -1,14 +1,15 @@
 module.exports = (sequelize, DataTypes) => {
     return sequelize.define("Category", {
-        mainCategory: DataTypes.STRING,
+        mainCategory: {
+            type: DataTypes.STRING,
+            allowNull: false
+        },
         compareAtPrice: {
             type: DataTypes.FLOAT,
-            allowNull: false,
             defaultValue: 0
         },
         weight: {
             type: DataTypes.FLOAT,
-            allowNull: false,
             defaultValue: 0
         }
     });

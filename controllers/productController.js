@@ -3,53 +3,82 @@ const { Product, Variant, Category, Metafield } = require("../models");
 exports.createProduct = async (req, res) => {
     try {
         const { title, description, category, variants, categoryInfo } = req.body;
-        const media = req.file?.filename;
 
-        const product = await Product.create({ title, description, media, category });
+        const media = req.file?.filename || null;
 
-        const parsedVariants = variants.map(v => ({ ...v, ProductId: product.id }));
-        await Variant.bulkCreate(parsedVariants);
-
-        const parsedCategoryInfo = categoryInfo;
-        const categoryEntry = await Category.create({
-            ...parsedCategoryInfo,
-            compareAtPrice: parsedCategoryInfo.compareAtPrice || 0,
-            weight: parsedCategoryInfo.weight || 0,
-            ProductId: product.id
+        // 1. Create Product
+        const product = await Product.create({
+            title,
+            description,
+            category,
+            media
         });
 
-        let metafields = [];
-
-        if (categoryInfo?.customMetafields) {
-            metafields = Object.entries(categoryInfo.customMetafields).map(([key, value]) => ({
-                key,
-                value,
-                CategoryId: categoryEntry.id,
+        // 2. Create Variants (if any)
+        if (Array.isArray(variants) && variants.length > 0) {
+            const formattedVariants = variants.map(v => ({
+                ...v,
+                ProductId: product.id
             }));
-
-            await Metafield.bulkCreate(metafields);
+            await Variant.bulkCreate(formattedVariants);
         }
 
+        // 3. Create Category Info
+        let categoryEntry = null;
+        if (categoryInfo) {
+            categoryEntry = await Category.create({
+                mainCategory: categoryInfo.mainCategory || '',
+                compareAtPrice: parseFloat(categoryInfo.compareAtPrice) || 0,
+                weight: parseFloat(categoryInfo.weight) || 0,
+                ProductId: product.id
+            });
 
-        await Metafield.bulkCreate(metafields);
+            // 4. Create Custom Metafields (if any)
+            if (categoryInfo.customMetafields && typeof categoryInfo.customMetafields === 'object') {
+                const metafields = Object.entries(categoryInfo.customMetafields).map(([key, value]) => ({
+                    key,
+                    value,
+                    CategoryId: categoryEntry.id
+                }));
+                await Metafield.bulkCreate(metafields);
+            }
+        }
 
-        res.status(201).json({ success: true, product });
+        return res.status(201).json({
+            success: true,
+            productId: product.id,
+            message: "Product created successfully"
+        });
+
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Internal Server Error" });
+        console.error("Error creating product:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Internal Server Error",
+            error: err.message
+        });
     }
 };
 
 exports.getAllProducts = async (req, res) => {
     try {
         const products = await Product.findAll({
-            include: [Variant, { model: Category, include: [Metafield] }],
+            include: [
+                { model: Variant },
+                {
+                    model: Category,
+                    include: [Metafield]
+                }
+            ],
+            order: [['createdAt', 'DESC']]
         });
-        res.json(products);
+        res.status(200).json(products);
     } catch (err) {
+        console.error("Error fetching all products:", err);
         res.status(500).json({ error: "Failed to fetch products" });
     }
 };
+
 
 exports.getProducts = async (req, res) => {
     const { id } = req.params;
@@ -58,8 +87,11 @@ exports.getProducts = async (req, res) => {
         const product = await Product.findOne({
             where: { id },
             include: [
-                { model: Variant, as: 'variants' },
-                { model: Category, as: 'category' }
+                { model: Variant },
+                {
+                    model: Category,
+                    include: [Metafield]
+                }
             ]
         });
 
@@ -67,16 +99,18 @@ exports.getProducts = async (req, res) => {
 
         res.status(200).json(product);
     } catch (err) {
-        console.error('Error getting product:', err);
+        console.error('Error fetching product:', err);
         res.status(500).json({ message: 'Server error' });
     }
 };
 
 
 
+
 exports.updateProduct = async (req, res) => {
     const { id } = req.params;
     const { title, description, category } = req.body;
+    const media = req.file?.filename;
 
     try {
         const product = await Product.findByPk(id);
@@ -85,15 +119,17 @@ exports.updateProduct = async (req, res) => {
         product.title = title || product.title;
         product.description = description || product.description;
         product.category = category || product.category;
+        if (media) product.media = media;
 
         await product.save();
 
         res.status(200).json({ message: 'Product updated successfully', product });
     } catch (error) {
-        console.error(error);
+        console.error('Error updating product:', error);
         res.status(500).json({ message: 'Error updating product', error });
     }
 };
+
 
 
 exports.deleteProduct = async (req, res) => {
@@ -101,26 +137,24 @@ exports.deleteProduct = async (req, res) => {
 
     try {
         const product = await Product.findByPk(id);
+        if (!product) return res.status(404).json({ message: 'Product not found' });
 
-        if (!product) {
-            return res.status(404).json({ message: 'Product not found' });
-        }
-
-        // Delete associated variants, category and metafields (optional, if cascade not working)
+        // Delete associated data
         await Variant.destroy({ where: { ProductId: id } });
+
         const category = await Category.findOne({ where: { ProductId: id } });
         if (category) {
             await Metafield.destroy({ where: { CategoryId: category.id } });
             await Category.destroy({ where: { ProductId: id } });
         }
 
-        // Delete the product
         await product.destroy();
 
         res.status(200).json({ message: 'Product deleted successfully' });
 
     } catch (error) {
-        console.error(error);
+        console.error('Error deleting product:', error);
         res.status(500).json({ message: 'Error deleting product', error });
     }
 };
+
